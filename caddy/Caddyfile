@@ -1,6 +1,9 @@
 # See wiki/caddy.md
 
 :{$CADDY_CONTAINER_PORT} {
+    handle /pipeline* {
+        reverse_proxy http://backend:{$BACKEND_CONTAINER_PORT}
+    }
     handle /items* {
         reverse_proxy http://backend:{$BACKEND_CONTAINER_PORT}
     }
@@ -8,9 +11,6 @@
         reverse_proxy http://backend:{$BACKEND_CONTAINER_PORT}
     }
     handle /interactions* {
-        reverse_proxy http://backend:{$BACKEND_CONTAINER_PORT}
-    }
-    handle /pipeline* {
         reverse_proxy http://backend:{$BACKEND_CONTAINER_PORT}
     }
     handle /analytics* {
