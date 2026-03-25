@@ -1,4 +1,7 @@
-"""LLM API client for intent classification and AI assistance."""
+"""LLM API client for intent classification and AI assistance with tool calling support."""
+
+import json
+from typing import Any
 
 import httpx
 
@@ -6,7 +9,7 @@ from bot.config import settings
 
 
 class LLMClient:
-    """Client for the LLM API."""
+    """Client for the LLM API with tool calling support."""
 
     def __init__(self):
         """Initialize the LLM client."""
@@ -29,6 +32,50 @@ class LLMClient:
             )
         return self._client
 
+    def chat_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        tool_choice: str | dict = "auto",
+        max_tokens: int = 1000,
+    ) -> dict[str, Any]:
+        """Send a chat request with tool definitions.
+
+        Args:
+            messages: List of message dicts with role and content
+            tools: List of tool definitions
+            tool_choice: How to choose tools ("auto", "none", "required", or specific)
+            max_tokens: Maximum tokens in response
+
+        Returns:
+            Response dict with message and optional tool_calls
+        """
+        if not self.base_url or not self.api_key:
+            return {
+                "error": "LLM not configured",
+                "message": {"role": "assistant", "content": "LLM service is not configured."},
+            }
+
+        try:
+            response = self.client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": self.model,
+                    "messages": messages,
+                    "tools": tools,
+                    "tool_choice": tool_choice,
+                    "max_tokens": max_tokens,
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]
+        except httpx.HTTPError as e:
+            return {
+                "error": str(e),
+                "message": {"role": "assistant", "content": f"LLM service unavailable: {str(e)}"},
+            }
+
     def classify_intent(self, user_message: str) -> str:
         """Classify the user's intent from their message.
 
@@ -39,7 +86,6 @@ class LLMClient:
             Intent string (e.g., "check_scores", "list_labs", "help")
         """
         if not self.base_url or not self.api_key:
-            # Fallback to keyword-based classification
             return self._classify_by_keywords(user_message)
 
         try:
@@ -70,14 +116,7 @@ class LLMClient:
             return self._classify_by_keywords(user_message)
 
     def _classify_by_keywords(self, message: str) -> str:
-        """Fallback keyword-based intent classification.
-
-        Args:
-            message: User's message
-
-        Returns:
-            Intent string
-        """
+        """Fallback keyword-based intent classification."""
         message_lower = message.lower()
 
         if any(word in message_lower for word in ["score", "grade", "result"]):
