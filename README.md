@@ -95,3 +95,95 @@ By the end of this lab, you should be able to say:
 ### Optional
 
 1. [Flutter Web Chatbot](./lab/tasks/optional/task-1.md)
+
+## Deploy
+
+### Prerequisites
+
+Before deploying, ensure you have:
+
+1. **Telegram Bot Token** - Get from [@BotFather](https://t.me/BotFather) on Telegram
+2. **LLM API credentials** - Qwen Code proxy running on your VM (port 42005)
+3. **Backend running** - The LMS backend must be deployed first
+
+### Environment Variables
+
+Add the following to `.env.docker.secret` on your VM:
+
+```bash
+# Telegram Bot
+BOT_TOKEN=your-telegram-bot-token-from-botfather
+
+# LLM API (Qwen Code Proxy)
+LLM_API_KEY=my-secret-qwen-key
+LLM_API_BASE_URL=http://host.docker.internal:42005
+LLM_API_MODEL=qwen3-coder-plus
+```
+
+> **Note**: The bot uses `http://backend:8000` internally to reach the backend (Docker networking). The `LLM_API_BASE_URL` uses `host.docker.internal` to reach the Qwen proxy running on the host.
+
+### Deploy Commands
+
+```bash
+# Navigate to project directory
+cd ~/se-toolkit-lab-7
+
+# Stop any running bot process (from previous nohup deployment)
+pkill -f "bot.py" 2>/dev/null || true
+
+# Build and start all services (including the bot)
+docker compose --env-file .env.docker.secret up --build -d
+
+# Check status
+docker compose --env-file .env.docker.secret ps
+```
+
+You should see the `bot` service running alongside `backend`, `postgres`, `caddy`, and `pgadmin`.
+
+### Verify Deployment
+
+```bash
+# Check bot container logs
+docker compose --env-file .env.docker.secret logs bot --tail 30
+
+# Look for:
+# - "Application started" - bot connected to Telegram
+# - "HTTP Request: POST .../getUpdates" - bot is polling for messages
+```
+
+### Test in Telegram
+
+1. Open your bot in Telegram
+2. Send `/start` - should receive welcome message
+3. Send `/health` - should show backend status
+4. Send "what labs are available?" - should list labs (LLM-powered)
+5. Send "which lab has the lowest pass rate?" - should analyze all labs
+
+### Troubleshooting
+
+| Symptom | Solution |
+|---------|----------|
+| Bot container restarting | Check logs: `docker compose logs bot` |
+| `/health` fails | Ensure `LMS_API_BASE_URL=http://backend:8000` |
+| LLM queries fail | Use `host.docker.internal:42005` for `LLM_API_BASE_URL` |
+| "BOT_TOKEN is required" | Add `BOT_TOKEN` to `.env.docker.secret` |
+
+### Update Deployment
+
+```bash
+# Pull latest changes
+cd ~/se-toolkit-lab-7 && git pull
+
+# Rebuild and restart bot
+docker compose --env-file .env.docker.secret up --build -d bot
+```
+
+### Stop Deployment
+
+```bash
+# Stop bot only
+docker compose --env-file .env.docker.secret stop bot
+
+# Stop all services
+docker compose --env-file .env.docker.secret down
+```
