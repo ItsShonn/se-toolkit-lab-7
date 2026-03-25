@@ -37,7 +37,7 @@ def load_config() -> BotSettings:
     env_file = bot_dir / ".env.bot.secret"
 
     if env_file.exists():
-        return BotSettings.model_validate({})
+        return BotSettings(_env_file=env_file)
 
     # Fall back to environment variables only
     return BotSettings.model_validate({})
