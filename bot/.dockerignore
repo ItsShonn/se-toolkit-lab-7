@@ -1,0 +1,8 @@
+# Bot-specific dockerignore
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.egg-info/
+tests/
+.env.bot.secret
