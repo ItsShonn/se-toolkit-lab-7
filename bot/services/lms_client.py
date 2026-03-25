@@ -1,8 +1,38 @@
 """LMS API client for interacting with the backend."""
 
+from dataclasses import dataclass
+
 import httpx
 
 from bot.config import settings
+
+
+@dataclass
+class LMSHealthStatus:
+    """Health status of the LMS backend."""
+
+    healthy: bool
+    item_count: int | None = None
+    error: str | None = None
+
+
+@dataclass
+class LabInfo:
+    """Information about a lab."""
+
+    id: int
+    title: str
+    description: str
+    type: str
+
+
+@dataclass
+class TaskScore:
+    """Score information for a task."""
+
+    task: str
+    avg_score: float
+    attempts: int
 
 
 class LMSClient:
@@ -25,50 +55,127 @@ class LMSClient:
             )
         return self._client
 
-    def health_check(self) -> bool:
-        """Check if the LMS API is reachable.
+    def _format_error(self, error: Exception) -> str:
+        """Format an error message that includes the actual error details.
+
+        Args:
+            error: The exception that occurred
 
         Returns:
-            True if the API is healthy, False otherwise
+            User-friendly error message with actual error details
+        """
+        error_str = str(error).lower()
+
+        # Connection errors
+        if "connection refused" in error_str or "connect" in error_str:
+            return f"connection refused ({self.base_url}). Check that the services are running."
+
+        # HTTP errors
+        if "http" in error_str:
+            # Try to extract status code from the error
+            if hasattr(error, "response") and error.response is not None:
+                status = error.response.status_code
+                reason = error.response.reason_phrase
+                return f"HTTP {status} {reason}. The backend service may be down."
+            if "502" in error_str or "bad gateway" in error_str.lower():
+                return "HTTP 502 Bad Gateway. The backend service may be down."
+            if "503" in error_str or "service unavailable" in error_str.lower():
+                return "HTTP 503 Service Unavailable. The backend service may be down."
+            if "401" in error_str or "unauthorized" in error_str.lower():
+                return "HTTP 401 Unauthorized. Check the API key configuration."
+            if "403" in error_str or "forbidden" in error_str.lower():
+                return "HTTP 403 Forbidden. Check the API key configuration."
+            if "404" in error_str or "not found" in error_str.lower():
+                return "HTTP 404 Not Found. The requested resource does not exist."
+            if "500" in error_str or "internal server error" in error_str.lower():
+                return "HTTP 500 Internal Server Error. The backend encountered an error."
+
+        # Timeout errors
+        if "timeout" in error_str or "timed out" in error_str:
+            return f"request timed out ({self.base_url}). The backend may be overloaded."
+
+        # Generic error - include the actual error message
+        return str(error)
+
+    def health_check(self) -> LMSHealthStatus:
+        """Check if the LMS API is reachable and get item count.
+
+        Returns:
+            LMSHealthStatus with health information
         """
         try:
-            response = self.client.get("/health")
-            return response.status_code == 200
-        except httpx.HTTPError:
-            return False
+            response = self.client.get("/items/")
+            response.raise_for_status()
+            items = response.json()
+            return LMSHealthStatus(healthy=True, item_count=len(items))
+        except httpx.HTTPError as e:
+            return LMSHealthStatus(
+                healthy=False, error=self._format_error(e)
+            )
+        except Exception as e:
+            return LMSHealthStatus(
+                healthy=False, error=self._format_error(e)
+            )
 
-    def get_labs(self) -> list[dict]:
+    def get_labs(self) -> list[LabInfo]:
         """Fetch available labs.
 
         Returns:
-            List of lab dictionaries
+            List of LabInfo objects
         """
         try:
-            response = self.client.get("/items")
+            response = self.client.get("/items/")
             response.raise_for_status()
-            return response.json()
-        except httpx.HTTPError:
-            return []
+            items = response.json()
+            labs = []
+            for item in items:
+                if item.get("type") == "lab":
+                    labs.append(
+                        LabInfo(
+                            id=item["id"],
+                            title=item["title"],
+                            description=item.get("description", ""),
+                            type=item["type"],
+                        )
+                    )
+            return labs
+        except httpx.HTTPError as e:
+            raise RuntimeError(self._format_error(e)) from e
+        except Exception as e:
+            raise RuntimeError(self._format_error(e)) from e
 
-    def get_scores(self, lab_name: str | None = None) -> list[dict]:
-        """Fetch user scores.
+    def get_pass_rates(self, lab_name: str) -> list[TaskScore]:
+        """Fetch per-task pass rates for a lab.
 
         Args:
-            lab_name: Optional lab name to filter scores
+            lab_name: Lab identifier (e.g., "lab-04")
 
         Returns:
-            List of score dictionaries
+            List of TaskScore objects
         """
         try:
-            endpoint = "/interactions"
-            if lab_name:
-                # Will be implemented with proper filtering in Task 2
-                pass
-            response = self.client.get(endpoint)
+            response = self.client.get(
+                "/analytics/pass-rates", params={"lab": lab_name}
+            )
             response.raise_for_status()
-            return response.json()
-        except httpx.HTTPError:
-            return []
+            data = response.json()
+            scores = []
+            for item in data:
+                scores.append(
+                    TaskScore(
+                        task=item["task"],
+                        avg_score=float(item["avg_score"]),
+                        attempts=int(item["attempts"]),
+                    )
+                )
+            return scores
+        except httpx.HTTPError as e:
+            if hasattr(e, "response") and e.response is not None:
+                if e.response.status_code == 400:
+                    raise ValueError(f"Lab '{lab_name}' not found") from e
+            raise RuntimeError(self._format_error(e)) from e
+        except Exception as e:
+            raise RuntimeError(self._format_error(e)) from e
 
     def close(self) -> None:
         """Close the HTTP client."""
