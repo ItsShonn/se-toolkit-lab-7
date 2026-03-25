@@ -1,22 +1,21 @@
-# Bot Dockerfile - uses uv for dependency management
+# Bot Dockerfile - builds venv inside container with cache
 FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim
 
-# Set working directory
 WORKDIR /app
 
-# Copy workspace files first for dependency resolution
+# Copy workspace files
 COPY pyproject.toml uv.lock ./
 
-# Copy bot source code
+# Copy bot source
 COPY bot/ ./bot/
 
-# Install bot dependencies using uv sync (without --frozen to allow flexibility)
-RUN uv sync --no-dev
+# Create venv with cache mount (uses host's uv cache if available)
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --no-dev
 
-# Set environment variables to use the venv
+# Set environment
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-# Run the bot
 CMD ["python", "-m", "bot.bot"]
