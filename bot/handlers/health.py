@@ -14,20 +14,29 @@ def handle_health(user_input: str = "") -> str:
     Returns:
         Health status message
     """
-    status_parts = []
-
     # Bot is running (we're here, so it is)
-    status_parts.append("✅ Bot: Running")
+    bot_status = "✅ Bot: Running"
 
     # Check backend health
     try:
         lms_client = LMSClient()
-        # For now, just report configured status
-        if lms_client.base_url:
-            status_parts.append(f"✅ LMS API: Configured ({lms_client.base_url})")
-        else:
-            status_parts.append("⚠️ LMS API: Not configured")
-    except Exception as e:
-        status_parts.append(f"❌ LMS API: Error - {str(e)}")
+        if not lms_client.base_url:
+            return f"{bot_status}\n⚠️ LMS API: Not configured (LMS_API_BASE_URL not set)"
 
-    return "\n".join(status_parts)
+        status = lms_client.health_check()
+
+        if status.healthy:
+            return f"{bot_status}\n✅ Backend is healthy. {status.item_count} items available."
+        else:
+            error_msg = status.error or "Unknown error"
+            return f"{bot_status}\n❌ Backend error: {error_msg}"
+
+    except Exception as e:
+        error_msg = str(e)
+        # Make error message user-friendly but include actual error
+        if "connection refused" in error_msg.lower():
+            return f"{bot_status}\n❌ Backend error: connection refused ({LMSClient().base_url}). Check that the services are running."
+        elif "http" in error_msg.lower():
+            return f"{bot_status}\n❌ Backend error: {error_msg}"
+        else:
+            return f"{bot_status}\n❌ Backend error: {error_msg}"
